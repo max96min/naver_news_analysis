@@ -186,8 +186,14 @@ if 'selected_keyword' in st.session_state:
 # Stock List Display (if Stock Name Matching)
 if grouping_method == "Stock Name Matching":
     with st.expander("View Tracked Stock List"):
+        col_refresh, col_info = st.columns([1, 3])
+        with col_refresh:
+            force_refresh = st.button("🔄 Refresh", help="Fetch latest stock data")
+        with col_info:
+            st.caption("Stock data is cached daily. Click refresh to update manually.")
+        
         with st.spinner("Fetching stock list..."):
-            stock_df = get_high_cap_stocks(min_marcap)
+            stock_df = get_high_cap_stocks(min_marcap, force_refresh=force_refresh)
             if not stock_df.empty:
                 st.dataframe(stock_df)
                 st.caption(f"Total {len(stock_df)} stocks tracked.")
