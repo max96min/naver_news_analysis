@@ -26,7 +26,8 @@ def save_settings():
         "sort_option": st.session_state.sort_option,
         "similarity_threshold": st.session_state.get("similarity_threshold", 0.5),
         "enable_summary": st.session_state.enable_summary,
-        "group_sort_by": st.session_state.group_sort_by
+        "group_sort_by": st.session_state.group_sort_by,
+        "min_marcap_trillion": st.session_state.get("min_marcap_trillion", 0.5)
     }
     save_config(new_config)
 
@@ -63,8 +64,12 @@ with st.sidebar:
         # 500 Billion = 0.5 Trillion
         marcap_trillion = st.slider(
             "Min Market Cap (Trillion KRW)", 
-            0.1, 50.0, 0.5, 0.1,
-            help="Filter stocks by minimum market capitalization."
+            0.1, 50.0, 
+            config["min_marcap_trillion"], 
+            0.1,
+            help="Filter stocks by minimum market capitalization.",
+            key="min_marcap_trillion",
+            on_change=save_settings
         )
         min_marcap = int(marcap_trillion * 1000000000000)
     

@@ -8,7 +8,8 @@ DEFAULT_CONFIG = {
     "sort_option": "Relevance",
     "similarity_threshold": 0.5,
     "enable_summary": True,
-    "group_sort_by": "Default" # Default or Article Count
+    "group_sort_by": "Default", # Default or Article Count
+    "min_marcap_trillion": 0.5  # Market cap in trillion KRW
 }
 
 def load_config():
