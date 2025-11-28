@@ -65,7 +65,7 @@ with st.sidebar:
         marcap_trillion = st.slider(
             "Min Market Cap (Trillion KRW)", 
             0.1, 50.0, 
-            config["min_marcap_trillion"], 
+            config.get("min_marcap_trillion", 0.5), 
             0.1,
             help="Filter stocks by minimum market capitalization.",
             key="min_marcap_trillion",
