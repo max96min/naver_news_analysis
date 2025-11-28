@@ -9,7 +9,8 @@ DEFAULT_CONFIG = {
     "similarity_threshold": 0.5,
     "enable_summary": True,
     "group_sort_by": "Default", # Default or Article Count
-    "min_marcap_trillion": 0.5  # Market cap in trillion KRW
+    "min_marcap_trillion": 0.5,  # Market cap in trillion KRW
+    "favorite_keywords": []  # List of favorite keywords
 }
 
 def load_config():

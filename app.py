@@ -115,7 +115,71 @@ with st.sidebar:
     )
 
 # Main Interface
-keyword = st.text_input("Enter Search Keyword", "인공지능")
+st.markdown("### 🔍 Search Keywords")
+
+# Favorite keywords management
+col1, col2 = st.columns([3, 1])
+
+with col1:
+    # Multi-keyword input
+    keywords_input = st.text_input(
+        "Enter keywords (comma-separated)", 
+        "인공지능",
+        help="Enter multiple keywords separated by commas (e.g., 삼성전자, SK하이닉스)"
+    )
+    keywords = [k.strip() for k in keywords_input.split(',') if k.strip()]
+
+with col2:
+    st.write("")  # Spacing
+    st.write("")  # Spacing
+    add_to_favorites = st.button("⭐ Add to Favorites", use_container_width=True)
+
+# Add current keywords to favorites
+if add_to_favorites and keywords:
+    current_favorites = config.get("favorite_keywords", [])
+    for keyword in keywords:
+        if keyword not in current_favorites:
+            current_favorites.append(keyword)
+    config["favorite_keywords"] = current_favorites
+    save_config(config)
+    st.success(f"Added to favorites!")
+    st.rerun()
+
+# Display favorite keywords
+favorite_keywords = config.get("favorite_keywords", [])
+if favorite_keywords:
+    st.markdown("**⭐ Favorite Keywords:**")
+    
+    # Create columns for favorite keyword buttons
+    cols = st.columns(min(len(favorite_keywords), 5))
+    
+    for idx, fav_keyword in enumerate(favorite_keywords):
+        col_idx = idx % 5
+        with cols[col_idx]:
+            # Button to use this keyword
+            if st.button(f"🔍 {fav_keyword}", key=f"use_{fav_keyword}", use_container_width=True):
+                st.session_state.selected_keyword = fav_keyword
+                st.rerun()
+    
+    # Remove favorites section
+    with st.expander("Manage Favorites"):
+        keywords_to_remove = st.multiselect(
+            "Select keywords to remove",
+            favorite_keywords,
+            key="remove_favorites"
+        )
+        if st.button("Remove Selected") and keywords_to_remove:
+            updated_favorites = [k for k in favorite_keywords if k not in keywords_to_remove]
+            config["favorite_keywords"] = updated_favorites
+            save_config(config)
+            st.success("Removed from favorites!")
+            st.rerun()
+
+# Use selected favorite keyword if available
+if 'selected_keyword' in st.session_state:
+    keywords = [st.session_state.selected_keyword]
+    keywords_input = st.session_state.selected_keyword
+    del st.session_state.selected_keyword
 
 # Stock List Display (if Stock Name Matching)
 if grouping_method == "Stock Name Matching":
@@ -128,23 +192,38 @@ if grouping_method == "Stock Name Matching":
             else:
                 st.warning("No stocks found with current criteria.")
 
-if st.button("Search News"):
+if st.button("🔍 Search News", type="primary", use_container_width=True):
     if not naver_client_id or not naver_client_secret:
         st.error("Please provide Naver API Keys in the sidebar or .env file.")
+    elif not keywords:
+        st.warning("Please enter at least one keyword.")
     else:
-        with st.spinner(f"Fetching news for '{keyword}'..."):
-            news_items = fetch_naver_news(keyword, naver_client_id, naver_client_secret, sort=sort_param)
+        # Search for each keyword
+        all_news_items = []
         
-        if not news_items:
+        for keyword in keywords:
+            with st.spinner(f"Fetching news for '{keyword}'..."):
+                news_items = fetch_naver_news(keyword, naver_client_id, naver_client_secret, sort=sort_param)
+                all_news_items.extend(news_items)
+        
+        if not all_news_items:
             st.warning("No news found or error occurred.")
         else:
+            # Remove duplicates based on link
+            seen_links = set()
+            unique_news_items = []
+            for item in all_news_items:
+                if item['link'] not in seen_links:
+                    seen_links.add(item['link'])
+                    unique_news_items.append(item)
+            
             # Filter by date
-            filtered_items = filter_news_by_date(news_items, start_date, end_date)
+            filtered_items = filter_news_by_date(unique_news_items, start_date, end_date)
             
             if not filtered_items:
-                st.warning(f"Found {len(news_items)} articles, but none match the selected date range ({start_date} ~ {end_date}). Try changing the 'Sort By' to 'Date' or widening the range.")
+                st.warning(f"Found {len(unique_news_items)} articles, but none match the selected date range ({start_date} ~ {end_date}). Try changing the 'Sort By' to 'Date' or widening the range.")
             else:
-                st.success(f"Found {len(filtered_items)} articles (from {len(news_items)} raw results). Grouping...")
+                st.success(f"Found {len(filtered_items)} articles for {len(keywords)} keyword(s) (from {len(unique_news_items)} raw results). Grouping...")
                 
                 groups = []
                 if grouping_method == "Semantic Similarity (AI)":
