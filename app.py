@@ -117,68 +117,69 @@ with st.sidebar:
 # Main Interface
 st.markdown("### 🔍 Search Keywords")
 
-# Favorite keywords management
-col1, col2 = st.columns([3, 1])
+# Display favorite keywords first (if any)
+favorite_keywords = config.get("favorite_keywords", [])
+if favorite_keywords:
+    st.markdown("**⭐ Quick Search - Favorite Keywords:**")
+    
+    # Create a grid of favorite keyword chips
+    num_cols = 4
+    rows = [favorite_keywords[i:i+num_cols] for i in range(0, len(favorite_keywords), num_cols)]
+    
+    for row in rows:
+        cols = st.columns(num_cols)
+        for idx, fav_keyword in enumerate(row):
+            with cols[idx]:
+                # Create a container for each favorite
+                col_a, col_b = st.columns([4, 1])
+                with col_a:
+                    if st.button(f"🔍 {fav_keyword}", key=f"search_{fav_keyword}", use_container_width=True):
+                        st.session_state.selected_keyword = fav_keyword
+                        st.rerun()
+                with col_b:
+                    if st.button("❌", key=f"remove_{fav_keyword}", help=f"Remove '{fav_keyword}'"):
+                        updated_favorites = [k for k in favorite_keywords if k != fav_keyword]
+                        config["favorite_keywords"] = updated_favorites
+                        save_config(config)
+                        st.rerun()
+    
+    st.markdown("---")
+
+# Keyword input section
+col1, col2 = st.columns([4, 1])
 
 with col1:
     # Multi-keyword input
+    default_value = st.session_state.get('selected_keyword', '인공지능')
     keywords_input = st.text_input(
-        "Enter keywords (comma-separated)", 
-        "인공지능",
-        help="Enter multiple keywords separated by commas (e.g., 삼성전자, SK하이닉스)"
+        "Enter keywords (comma-separated for multiple)", 
+        default_value,
+        help="💡 Tip: Enter multiple keywords like '삼성전자, SK하이닉스' or click a favorite above",
+        key="keyword_input"
     )
     keywords = [k.strip() for k in keywords_input.split(',') if k.strip()]
 
 with col2:
     st.write("")  # Spacing
     st.write("")  # Spacing
-    add_to_favorites = st.button("⭐ Add to Favorites", use_container_width=True)
-
-# Add current keywords to favorites
-if add_to_favorites and keywords:
-    current_favorites = config.get("favorite_keywords", [])
-    for keyword in keywords:
-        if keyword not in current_favorites:
-            current_favorites.append(keyword)
-    config["favorite_keywords"] = current_favorites
-    save_config(config)
-    st.success(f"Added to favorites!")
-    st.rerun()
-
-# Display favorite keywords
-favorite_keywords = config.get("favorite_keywords", [])
-if favorite_keywords:
-    st.markdown("**⭐ Favorite Keywords:**")
-    
-    # Create columns for favorite keyword buttons
-    cols = st.columns(min(len(favorite_keywords), 5))
-    
-    for idx, fav_keyword in enumerate(favorite_keywords):
-        col_idx = idx % 5
-        with cols[col_idx]:
-            # Button to use this keyword
-            if st.button(f"🔍 {fav_keyword}", key=f"use_{fav_keyword}", use_container_width=True):
-                st.session_state.selected_keyword = fav_keyword
+    # Only show add button if there are keywords and they're not all already favorited
+    if keywords:
+        new_keywords = [k for k in keywords if k not in favorite_keywords]
+        if new_keywords:
+            if st.button("⭐ Save", use_container_width=True, help="Add to favorites"):
+                current_favorites = config.get("favorite_keywords", [])
+                for keyword in new_keywords:
+                    if keyword not in current_favorites:
+                        current_favorites.append(keyword)
+                config["favorite_keywords"] = current_favorites
+                save_config(config)
+                st.success(f"✅ Added {len(new_keywords)} keyword(s)!")
                 st.rerun()
-    
-    # Remove favorites section
-    with st.expander("Manage Favorites"):
-        keywords_to_remove = st.multiselect(
-            "Select keywords to remove",
-            favorite_keywords,
-            key="remove_favorites"
-        )
-        if st.button("Remove Selected") and keywords_to_remove:
-            updated_favorites = [k for k in favorite_keywords if k not in keywords_to_remove]
-            config["favorite_keywords"] = updated_favorites
-            save_config(config)
-            st.success("Removed from favorites!")
-            st.rerun()
+        else:
+            st.button("⭐ Saved", use_container_width=True, disabled=True, help="Already in favorites")
 
-# Use selected favorite keyword if available
+# Clear selected keyword from session state after using it
 if 'selected_keyword' in st.session_state:
-    keywords = [st.session_state.selected_keyword]
-    keywords_input = st.session_state.selected_keyword
     del st.session_state.selected_keyword
 
 # Stock List Display (if Stock Name Matching)
