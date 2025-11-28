@@ -135,6 +135,7 @@ if favorite_keywords:
                 with col_a:
                     if st.button(f"🔍 {fav_keyword}", key=f"search_{fav_keyword}", use_container_width=True):
                         st.session_state.selected_keyword = fav_keyword
+                        st.session_state.auto_search = True
                         st.rerun()
                 with col_b:
                     if st.button("❌", key=f"remove_{fav_keyword}", help=f"Remove '{fav_keyword}'"):
@@ -193,7 +194,13 @@ if grouping_method == "Stock Name Matching":
             else:
                 st.warning("No stocks found with current criteria.")
 
-if st.button("🔍 Search News", type="primary", use_container_width=True):
+# Check if auto-search is triggered
+auto_search = st.session_state.get('auto_search', False)
+if auto_search:
+    st.session_state.auto_search = False  # Reset flag
+
+# Search button or auto-search
+if st.button("🔍 Search News", type="primary", use_container_width=True) or auto_search:
     if not naver_client_id or not naver_client_secret:
         st.error("Please provide Naver API Keys in the sidebar or .env file.")
     elif not keywords:
