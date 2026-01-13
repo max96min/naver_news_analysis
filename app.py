@@ -7,7 +7,7 @@ import importlib
 importlib.reload(news_logic)
 importlib.reload(stock_logic)
 from news_logic import fetch_naver_news, group_news, summarize_group, filter_news_by_date, group_news_by_stock
-from stock_logic import get_high_cap_stocks
+from stock_logic import get_high_cap_stocks, get_top_trading_stocks
 from config_logic import load_config, save_config
 from datetime import date
 
@@ -58,20 +58,42 @@ with st.sidebar:
     
     # Stock Settings (Only if Stock Name Matching is selected)
     min_marcap = 500000000000 # Default
+    top_n_stocks = 30 # Default
+    stock_filter_type = "Market Cap"
+    
     if grouping_method == "Stock Name Matching":
         st.markdown("### Stock Filter")
-        # Slider for Market Cap (in Trillions for easier UI, but value in Bytes)
-        # 500 Billion = 0.5 Trillion
-        marcap_trillion = st.slider(
-            "Min Market Cap (Trillion KRW)", 
-            0.1, 50.0, 
-            config.get("min_marcap_trillion", 0.5), 
-            0.1,
-            help="Filter stocks by minimum market capitalization.",
-            key="min_marcap_trillion",
-            on_change=save_settings
+        
+        # Stock filter type selection
+        stock_filter_type = st.radio(
+            "Filter by",
+            ["Market Cap", "Trading Volume"],
+            help="Choose how to filter stocks for news grouping",
+            horizontal=True
         )
-        min_marcap = int(marcap_trillion * 1000000000000)
+        
+        if stock_filter_type == "Market Cap":
+            # Slider for Market Cap (in Trillions for easier UI, but value in Bytes)
+            # 500 Billion = 0.5 Trillion
+            marcap_trillion = st.slider(
+                "Min Market Cap (Trillion KRW)", 
+                0.1, 50.0, 
+                config.get("min_marcap_trillion", 0.5), 
+                0.1,
+                help="Filter stocks by minimum market capitalization.",
+                key="min_marcap_trillion",
+                on_change=save_settings
+            )
+            min_marcap = int(marcap_trillion * 1000000000000)
+        else:
+            # Slider for top N trading volume stocks
+            top_n_stocks = st.slider(
+                "Top N Stocks by Trading Volume",
+                10, 100,
+                30,
+                5,
+                help="Show top N stocks by trading volume (거래대금)"
+            )
     
     # Date Filter
     st.subheader("Date Filter")
@@ -190,10 +212,17 @@ if grouping_method == "Stock Name Matching":
         with col_refresh:
             force_refresh = st.button("🔄 Refresh", help="Fetch latest stock data")
         with col_info:
-            st.caption("Stock data is cached daily. Click refresh to update manually.")
+            if stock_filter_type == "Market Cap":
+                st.caption("Stock data is cached daily. Click refresh to update manually.")
+            else:
+                st.caption("Showing real-time top trading volume stocks.")
         
         with st.spinner("Fetching stock list..."):
-            stock_df = get_high_cap_stocks(min_marcap, force_refresh=force_refresh)
+            if stock_filter_type == "Market Cap":
+                stock_df = get_high_cap_stocks(min_marcap, force_refresh=force_refresh)
+            else:
+                stock_df = get_top_trading_stocks(top_n_stocks)
+                
             if not stock_df.empty:
                 st.dataframe(stock_df)
                 st.caption(f"Total {len(stock_df)} stocks tracked.")
@@ -247,10 +276,11 @@ if st.button("🔍 Search News", type="primary", use_container_width=True) or au
                         groups = group_news(filtered_items, openai_api_key, threshold)
                 else:
                     with st.spinner("Fetching stock data and grouping..."):
-                        # Re-fetch or use cached if we want, but calling again is safer for now
-                        # We already fetched it for display if expanded, but let's fetch again or optimize later.
-                        # For now, just fetch.
-                        stock_df = get_high_cap_stocks(min_marcap)
+                        # Fetch stocks based on filter type
+                        if stock_filter_type == "Market Cap":
+                            stock_df = get_high_cap_stocks(min_marcap)
+                        else:
+                            stock_df = get_top_trading_stocks(top_n_stocks)
                         groups = group_news_by_stock(filtered_items, stock_df)
                 
                 # Sort Groups

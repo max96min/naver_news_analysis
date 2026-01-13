@@ -206,3 +206,29 @@ def get_high_cap_stocks(min_cap=500000000000, force_refresh=False):
         import traceback
         traceback.print_exc()
         return pd.DataFrame()
+
+def get_top_trading_stocks(top_n=30):
+    """
+    Fetches top N stocks by trading volume (Amount) from KRX.
+    Returns DataFrame with stock names and trading info.
+    """
+    try:
+        # Fetch all KRX stocks
+        df_krx = fdr.StockListing('KRX')
+        
+        if 'Amount' in df_krx.columns:
+            # Sort by trading amount (거래대금) and get top N
+            top_stocks = df_krx.nlargest(top_n, 'Amount').copy()
+            
+            # Select relevant columns
+            cols = ['Name', 'Code', 'Close', 'Changes', 'ChagesRatio', 'Amount', 'Volume']
+            available_cols = [c for c in cols if c in top_stocks.columns]
+            
+            return top_stocks[available_cols]
+        else:
+            print("Warning: 'Amount' column not found in stock data.")
+            return pd.DataFrame()
+            
+    except Exception as e:
+        print(f"Error fetching top trading stocks: {e}")
+        return pd.DataFrame()
