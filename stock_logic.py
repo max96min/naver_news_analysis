@@ -1,6 +1,6 @@
-import FinanceDataReader as fdr
+import requests
 import pandas as pd
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import json
 import os
 
@@ -37,6 +37,122 @@ def load_stock_cache(min_cap):
         print(f"Error loading stock cache: {e}")
         return None
 
+def fetch_naver_sise_data(market='KOSPI', page=1):
+    """
+    Fetch stock data from Naver Finance sise (시세) API.
+    market: 'KOSPI' or 'KOSDAQ'
+    """
+    market_code = 'KOSPI' if market == 'KOSPI' else 'KOSDAQ'
+    
+    url = "https://finance.naver.com/api/sise/etfItemList.nhn"
+    
+    # Use sise/marketSum API for market cap data
+    url = f"https://finance.naver.com/sise/sise_market_sum.naver"
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Referer": "https://finance.naver.com/",
+    }
+    
+    params = {
+        "sosok": "0" if market == 'KOSPI' else "1",  # 0: KOSPI, 1: KOSDAQ
+        "page": page
+    }
+    
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=30)
+        response.raise_for_status()
+        
+        # Parse HTML to extract stock data
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Find the main table
+        table = soup.select_one('table.type_2')
+        if not table:
+            return pd.DataFrame(), False
+        
+        stocks = []
+        rows = table.select('tbody tr')
+        
+        for row in rows:
+            cols = row.select('td')
+            if len(cols) < 10:
+                continue
+            
+            # Extract data from columns
+            try:
+                # Column 1: Rank (순위) - skip
+                # Column 2: Name (종목명)
+                name_tag = cols[1].select_one('a')
+                if not name_tag:
+                    continue
+                name = name_tag.text.strip()
+                
+                # Extract code from link
+                href = name_tag.get('href', '')
+                code = ''
+                if 'code=' in href:
+                    code = href.split('code=')[1].split('&')[0]
+                
+                # Column 3: Current price (현재가)
+                close = cols[2].text.strip().replace(',', '')
+                
+                # Column 4: Change (전일비)
+                changes = cols[3].text.strip().replace(',', '').replace('+', '')
+                
+                # Column 5: Change ratio (등락률)
+                changes_ratio = cols[4].text.strip().replace('%', '').replace('+', '')
+                
+                # Column 7: Market cap (시가총액) - in 억원
+                marcap_text = cols[6].text.strip().replace(',', '')
+                
+                if name and code and marcap_text:
+                    # Convert 억원 to 원 (multiply by 100,000,000)
+                    try:
+                        marcap = int(marcap_text) * 100000000
+                    except:
+                        marcap = 0
+                    
+                    stocks.append({
+                        'Name': name,
+                        'Code': code,
+                        'Close': int(close) if close.isdigit() or close.lstrip('-').isdigit() else 0,
+                        'Changes': int(changes) if changes.lstrip('-').isdigit() else 0,
+                        'ChagesRatio': float(changes_ratio) if changes_ratio.replace('.', '').replace('-', '').isdigit() else 0,
+                        'Marcap': marcap
+                    })
+            except Exception as e:
+                continue
+        
+        # Check if there are more pages
+        paging = soup.select_one('td.pgRR')
+        has_next = paging is not None
+        
+        return pd.DataFrame(stocks), has_next
+        
+    except Exception as e:
+        print(f"Error fetching Naver sise data: {e}")
+        return pd.DataFrame(), False
+
+def fetch_all_naver_stocks(market='KOSPI', max_pages=10):
+    """Fetch all stocks from Naver Finance with pagination"""
+    all_stocks = []
+    
+    for page in range(1, max_pages + 1):
+        df, has_next = fetch_naver_sise_data(market, page)
+        
+        if not df.empty:
+            all_stocks.append(df)
+            print(f"Fetched {market} page {page}: {len(df)} stocks")
+        
+        if not has_next or df.empty:
+            break
+    
+    if all_stocks:
+        return pd.concat(all_stocks, ignore_index=True)
+    return pd.DataFrame()
+
 def get_high_cap_stocks(min_cap=500000000000, force_refresh=False):
     """
     Fetches a list of Korean stock names with market capitalization >= min_cap.
@@ -50,36 +166,43 @@ def get_high_cap_stocks(min_cap=500000000000, force_refresh=False):
             print(f"Using cached stock data from {date.today()}")
             return cached_df
     
-    print("Fetching fresh stock data from FinanceDataReader...")
+    print("Fetching fresh stock data from Naver Finance...")
     try:
-        # Fetch list of all stocks in KRX (KOSPI + KOSDAQ)
-        df_krx = fdr.StockListing('KRX')
+        # Fetch from both KOSPI and KOSDAQ
+        kospi_df = fetch_all_naver_stocks('KOSPI', max_pages=15)
+        kosdaq_df = fetch_all_naver_stocks('KOSDAQ', max_pages=15)
         
-        # Filter by Market Cap (Marcap)
-        # Note: 'Marcap' column might need to be fetched separately or is available in KRX listing.
-        # FDR's 'KRX' listing usually contains 'Marcap'. Let's verify.
-        # Actually, 'KRX' listing has 'Marcap' column.
-        
-        if 'Marcap' in df_krx.columns:
-            # Filter by Market Cap
-            high_cap_df = df_krx[df_krx['Marcap'] >= min_cap].copy()
-            
-            # Select relevant columns
-            # Actual columns: Code, Name, Close, Changes, ChagesRatio, Marcap
-            cols = ['Name', 'Code', 'Close', 'Changes', 'ChagesRatio', 'Marcap']
-            # Check if columns exist to be safe
-            available_cols = [c for c in cols if c in high_cap_df.columns]
-            
-            result_df = high_cap_df[available_cols]
-            
-            # Save to cache
-            save_stock_cache(result_df, min_cap)
-            
-            return result_df
+        # Combine
+        if not kospi_df.empty or not kosdaq_df.empty:
+            dfs = [df for df in [kospi_df, kosdaq_df] if not df.empty]
+            if dfs:
+                combined_df = pd.concat(dfs, ignore_index=True)
+            else:
+                combined_df = pd.DataFrame()
         else:
-            print("Warning: 'Marcap' column not found in stock data.")
+            combined_df = pd.DataFrame()
+        
+        if combined_df.empty:
+            print("Failed to fetch stock data from Naver Finance")
             return pd.DataFrame()
+        
+        # Filter by market cap
+        high_cap_df = combined_df[combined_df['Marcap'] >= min_cap].copy()
+        
+        # Sort by market cap descending
+        high_cap_df = high_cap_df.sort_values('Marcap', ascending=False)
+        
+        # Reset index
+        high_cap_df = high_cap_df.reset_index(drop=True)
+        
+        # Save to cache
+        save_stock_cache(high_cap_df, min_cap)
+        
+        print(f"Successfully filtered {len(high_cap_df)} stocks with market cap >= {min_cap/1e12:.1f}T KRW")
+        return high_cap_df
             
     except Exception as e:
         print(f"Error fetching stock data: {e}")
+        import traceback
+        traceback.print_exc()
         return pd.DataFrame()
